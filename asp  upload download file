@@ -1,0 +1,153 @@
+using Google.Apis.Auth.OAuth2;
+using Google.Apis.Drive.v3;
+using Google.Apis.Services;
+using Google.Apis.Util.Store;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace WindowsFormsApplication4
+{
+    public partial class Form1 : Form
+    {
+        public Form1()
+        {
+            InitializeComponent();
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            OpenFileDialog fdlg = new OpenFileDialog();
+            fdlg.Title = "C# Corner Open File Dialog";
+            fdlg.InitialDirectory = @"c:\";
+            fdlg.Filter = "pdf file (*.pdf*)| doc file(*.doc*)|excel files (*.excel*)";
+            fdlg.FilterIndex = 2;
+            fdlg.RestoreDirectory = true;
+            if (fdlg.ShowDialog() == DialogResult.OK)
+            {
+                textBox1.Text = fdlg.FileName;
+            }
+        }
+
+        private void button3_Click(object sender, EventArgs e)
+        {
+            Authorize();
+        }
+            private void Authorize()
+        {
+            string[] scopes = new string[] { DriveService.Scope.Drive,
+                               DriveService.Scope.DriveFile,};
+            var clientId = "751661332766-0p7ph0t39f0i2jounetdgcgcqhj99jfu.apps.googleusercontent.com";        
+            var clientSecret = "Fmgr7YtfVANIaPlH09bNIbCi";         
+            var credential = GoogleWebAuthorizationBroker.AuthorizeAsync(new ClientSecrets
+            {
+                ClientId = clientId,
+                ClientSecret = clientSecret
+            }, scopes,
+            Environment.UserName, CancellationToken.None, new FileDataStore("MyAppsToken")).Result;
+           
+
+            DriveService service = new DriveService(new BaseClientService.Initializer()
+            {
+                HttpClientInitializer = credential,
+                ApplicationName = "MyAppName",
+
+            });
+            service.HttpClient.Timeout = TimeSpan.FromMinutes(100);
+            var respocne = uploadFile(service, textBox1.Text, "");
+            MessageBox.Show("Process completed--- Response--" + respocne);
+        }
+
+        public Google.Apis.Drive.v3.Data.File uploadFile(DriveService _service, string _uploadFile, string _parent, string _descrp = "Uploaded with .NET!")
+        {
+            if (System.IO.File.Exists(_uploadFile))
+            {
+                Google.Apis.Drive.v3.Data.File body = new Google.Apis.Drive.v3.Data.File();
+                body.Name = System.IO.Path.GetFileName(_uploadFile);
+                body.Description = _descrp;
+                body.MimeType = GetMimeType(_uploadFile);
+                byte[] byteArray = System.IO.File.ReadAllBytes(_uploadFile);
+                System.IO.MemoryStream stream = new System.IO.MemoryStream(byteArray);
+                try
+                {
+                    FilesResource.CreateMediaUpload request = _service.Files.Create(body, stream, GetMimeType(_uploadFile));
+                    request.SupportsTeamDrives = true;
+                    request.ProgressChanged += Request_ProgressChanged;
+                    request.ResponseReceived += Request_ResponseReceived;
+                    request.Upload();
+                    return request.ResponseBody;
+                }
+                catch (Exception e)
+                {
+                    MessageBox.Show(e.Message, "Error Occured");
+                    return null;
+                }
+            }
+            else
+            {
+                MessageBox.Show("The file does not exist.", "404");
+                return null;
+            }
+        }
+
+        private string GetMimeType(string _uploadFile)
+        {
+            throw new NotImplementedException();
+        }
+
+        private void Request_ProgressChanged(Google.Apis.Upload.IUploadProgress obj)
+        {
+            textBox2.Text += obj.Status + " " + obj.BytesSent;
+        }
+
+        private void Request_ResponseReceived(Google.Apis.Drive.v3.Data.File obj)
+        {
+            if (obj != null)
+            {
+                MessageBox.Show("File was uploaded sucessfully--" + obj.Id);
+                }
+            }
+
+        private void button4_Click(object sender, EventArgs e)
+        {
+            SaveToDir("https://docs.google.com/spreadsheets/d/1gVtdqIIWoDLjdut-lYIjZAslJ8D-Ug_nx9WKbJUmD4A/edit?usp=sharing", "muki");
+            private bool SaveToDir(string downloadUrl, string filename)
+        {
+            string filePath = Server.MapPath("imports/");
+            bool resp = false;
+            DriveService ds = new DriveService();
+            Uri temp = new Uri(downloadUrl);
+            string fileId = HttpUtility.ParseQueryString(temp.Query).Get("id");
+            var req = ds.Files.Get(fileId.Trim());
+            var stream = new MemoryStream();
+            req.MediaDownloader.ProgressChanged += (Google.Apis.Download.IDownloadProgress dp) => {
+                switch (dp.Status)
+                {
+                    case Google.Apis.Download.DownloadStatus.Downloading:
+                        Message("downloading, please wait....");
+                        break;
+                    case Google.Apis.Download.DownloadStatus.Completed:
+                        using (FileStream file = new FileStream(filePath, FileMode.Create, FileAccess.Write))
+                        {
+                            stream.WriteTo(file);
+                            Message("File Downloaded successfully.");
+                        }
+                        resp = true;
+                        break;
+                    case Google.Apis.Download.DownloadStatus.Failed:
+                        Message("Failed to Download.");
+                        resp = false;
+                        break;
+                }
+            };
+            req.Download(stream);
+        }
+    } }
+
